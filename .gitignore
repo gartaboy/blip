@@ -1,0 +1,12 @@
+# Local identity (contains private seed) - never commit
+.tmp-identity.json
+*.json.identity
+
+# Python cache
+__pycache__/
+*.pyc
+
+# Editors / OS
+.vscode/
+.idea/
+Thumbs.db
