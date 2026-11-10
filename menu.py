@@ -25,10 +25,17 @@ BANNER = r"""
 
 # --- helpers -----------------------------------------------------------------
 
+def cli_command():
+    """Команда запуска CLI: в exe — сам blip-cli.exe с --cli, иначе — cli.py."""
+    if getattr(sys, "frozen", False):
+        return [sys.executable, "--cli"]
+    return [sys.executable, str(CLI)]
+
+
 def blip(*args, capture=False):
-    """Запускает cli.py без служебных логов."""
+    """Запускает CLI без служебных логов."""
     return subprocess.run(
-        [sys.executable, str(CLI), "-q", *args],
+        [*cli_command(), "-q", *args],
         cwd=HERE, capture_output=capture, text=True, encoding="utf-8",
     )
 
@@ -98,7 +105,7 @@ def live_chat():
 
     def reader():
         proc = subprocess.Popen(
-            [sys.executable, str(CLI), "-q", "listen", "--output", str(INBOX), "--json"],
+            [*cli_command(), "-q", "listen", "--output", str(INBOX), "--json"],
             cwd=HERE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
             text=True, encoding="utf-8",
         )
