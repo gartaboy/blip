@@ -5,6 +5,7 @@ import json
 import os
 import subprocess
 import sys
+import threading
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -22,26 +23,20 @@ BANNER = r"""
 """
 
 
-def run(*args, pause=True):
-    """Запускает команду blip без служебных логов; Ctrl+C возвращает в меню."""
-    try:
-        subprocess.run([sys.executable, str(CLI), "-q", *args], cwd=HERE)
-    except KeyboardInterrupt:
-        print("\n(остановлено)")
-    if pause:
-        input("\nНажмите Enter, чтобы вернуться в меню...")
+# --- helpers -----------------------------------------------------------------
+
+def blip(*args, capture=False):
+    """Запускает cli.py без служебных логов."""
+    return subprocess.run(
+        [sys.executable, str(CLI), "-q", *args],
+        cwd=HERE, capture_output=capture, text=True, encoding="utf-8",
+    )
 
 
 def ask(prompt, default=None):
     suffix = f" [{default}]" if default else ""
     value = input(f"{prompt}{suffix}: ").strip()
     return value or (default or "")
-
-
-def identity_exists():
-    base = os.environ.get("APPDATA")
-    path = Path(base) / "blip-cli" / "identity.json" if base else None
-    return bool(path and path.exists())
 
 
 def ask_number(prompt, default=None):
@@ -52,29 +47,16 @@ def ask_number(prompt, default=None):
         print("  Введите число от 1 до 64.")
 
 
-def setup_identity():
-    print("\n=== Первая настройка ===")
-    print("Выберите свой номер (1-64) и имя, которое увидят другие.")
-    number = ask_number("Ваш номер (1-64)")
-    name = ask("Ваше имя", "Me")
-    run("identity", "--id", number, "--name", name, pause=False)
+def pause():
+    input("\nEnter — назад в меню...")
 
 
-def change_identity():
-    print("\n=== Изменить номер и имя ===")
-    number = ask_number("Новый номер (1-64)")
-    name = ask("Новое имя", "Me")
-    run("identity", "--id", number, "--name", name)
+def identity_exists():
+    base = os.environ.get("APPDATA")
+    return bool(base) and (Path(base) / "blip-cli" / "identity.json").exists()
 
 
-def show_identity():
-    run("identity")
-
-
-def discover():
-    print("\nИщем узлы в сети (около 8 секунд)...")
-    run("discover", "--timeout", "8")
-
+# --- groups storage ----------------------------------------------------------
 
 def load_groups():
     if not GROUPS.exists():
@@ -90,42 +72,28 @@ def save_groups(groups):
 
 
 def find_peer_ids():
-    """Все номера, которые сейчас видны в сети (кроме себя)."""
+    """Номера всех, кто сейчас в сети (кроме себя)."""
     try:
-        out = subprocess.run(
-            [sys.executable, str(CLI), "-q", "discover", "--timeout", "8", "--json"],
-            cwd=HERE, capture_output=True, text=True, encoding="utf-8",
-        ).stdout
-        data = json.loads(out)
-    except (ValueError, OSError):
+        data = json.loads(blip("discover", "--timeout", "8", "--json", capture=True).stdout)
+    except ValueError:
         return []
     me = data.get("self", {}).get("blipId")
     return [p["blipId"] for p in data.get("peers", []) if p.get("blipId") != me]
 
 
 def send_to_many(ids, text):
-    """Отправляет текст каждому номеру по очереди; ошибки одного не останавливают остальных."""
+    """Каждому по очереди; ошибка одного не останавливает остальных."""
     for peer in ids:
-        print(f"  -> #{peer}", end=" ", flush=True)
-        result = subprocess.run(
-            [sys.executable, str(CLI), "-q", "send", "--peer", str(peer), "--text", text],
-            cwd=HERE, capture_output=True, text=True, encoding="utf-8",
-        )
-        print("отправлено" if result.returncode == 0 else "не доставлено")
+        ok = blip("send", "--peer", str(peer), "--text", text, capture=True).returncode == 0
+        print(f"  #{peer}: {'отправлено' if ok else 'не доставлено'}")
 
+
+# --- actions -----------------------------------------------------------------
 
 def live_chat():
-    """Живой чат: входящие появляются сразу, а строка ниже — для ответа.
-
-    Слушатель работает в фоновом потоке и печатает входящие в тот же экран.
-    Ответ уходит на номер, который вы указали в начале чата.
-    """
-    import threading
-
+    """Чат с одним человеком: входящие появляются сразу, внизу строка ответа."""
     peer = ask_number("С каким номером общаемся (1-64)")
-    print(f"\n=== Чат с #{peer} ===")
-    print("Пишите сообщение и нажмите Enter. Чтобы выйти, напишите /выход.\n")
-
+    print(f"\n=== Чат с #{peer} === (напишите /выход, чтобы закрыть)\n")
     stop = threading.Event()
 
     def reader():
@@ -145,148 +113,129 @@ def live_chat():
                 if event.get("event") != "message":
                     continue
                 sender = event.get("from")
-                if sender == int(peer):
-                    print(f"\r#{sender}: {event.get('text', '')}\n> ", end="", flush=True)
-                else:
-                    print(f"\r(#{sender}): {event.get('text', '')}\n> ", end="", flush=True)
+                label = f"#{sender}" if sender == int(peer) else f"(#{sender})"
+                print(f"\r{label}: {event.get('text', '')}\n> ", end="", flush=True)
         finally:
             proc.terminate()
 
-    listener = threading.Thread(target=reader, daemon=True)
-    listener.start()
-
+    threading.Thread(target=reader, daemon=True).start()
     try:
         while True:
             text = input("> ").strip()
             if text == "/выход":
                 break
-            if not text:
-                continue
-            subprocess.run(
-                [sys.executable, str(CLI), "-q", "send", "--peer", peer, "--text", text],
-                cwd=HERE, capture_output=True, text=True, encoding="utf-8",
-            )
+            if text:
+                blip("send", "--peer", peer, "--text", text, capture=True)
     except (KeyboardInterrupt, EOFError):
         pass
     finally:
         stop.set()
     print("\nЧат закрыт.")
-    input("Enter, чтобы вернуться в меню...")
 
 
-def group_send():
-    groups = load_groups()
-    if not groups:
-        print("\nГрупп пока нет. Создайте группу в пункте «Управление группами».")
-        input("Enter...")
+def create_group(groups):
+    name = ask("Название группы")
+    if not name:
         return
+    raw = ask("Номера участников через запятую (например 2,3,5)")
+    ids = sorted({int(x) for x in raw.replace(" ", "").split(",")
+                  if x.isdigit() and 1 <= int(x) <= 64})
+    if not ids:
+        print("  Нужен хотя бы один номер от 1 до 64.")
+        return
+    groups[name] = ids
+    save_groups(groups)
+    print(f"  Группа «{name}» сохранена.")
+
+
+def write_to():
+    """Один экран: выбрать группу, всех в сети, создать или удалить группу."""
+    groups = load_groups()
     names = list(groups)
+    print("\n  a. Всем в сети")
     for i, name in enumerate(names, 1):
         print(f"  {i}. {name} ({', '.join(map(str, groups[name]))})")
-    choice = ask("Номер группы")
-    if not (choice.isdigit() and 1 <= int(choice) <= len(names)):
-        print("  Нет такой группы.")
-        input("Enter...")
+    print("  n. Создать группу" + ("   d. Удалить группу" if names else ""))
+    choice = ask("Кому (цифра, a, n, d)")
+
+    if choice == "n":
+        create_group(groups)
         return
+    if choice == "d" and names:
+        num = ask("Номер группы для удаления")
+        if num.isdigit() and 1 <= int(num) <= len(names):
+            del groups[names[int(num) - 1]]
+            save_groups(groups)
+            print("  Удалено.")
+        return
+    if choice == "a":
+        print("\nИщем всех в сети (около 8 секунд)...")
+        ids = find_peer_ids()
+    elif choice.isdigit() and 1 <= int(choice) <= len(names):
+        ids = groups[names[int(choice) - 1]]
+    else:
+        print("  Нет такого пункта.")
+        return
+    if not ids:
+        print("  Никого не нашли.")
+        return
+
     text = ask("Текст сообщения")
     if not text:
         print("  Пустое сообщение не отправляется.")
-        input("Enter...")
-        return
-    send_to_many(groups[names[int(choice) - 1]], text)
-    input("\nНажмите Enter, чтобы вернуться в меню...")
-
-
-def broadcast_all():
-    print("\nИщем всех в сети (около 8 секунд)...")
-    ids = find_peer_ids()
-    if not ids:
-        print("В сети никого не нашли.")
-        input("Enter...")
-        return
-    print(f"Найдено: {', '.join(f'#{i}' for i in ids)}")
-    text = ask("Текст для всех")
-    if not text:
-        print("  Пустое сообщение не отправляется.")
-        input("Enter...")
         return
     send_to_many(ids, text)
-    input("\nНажмите Enter, чтобы вернуться в меню...")
+    pause()
 
 
-def manage_groups():
-    while True:
-        groups = load_groups()
-        print("\n=== Группы ===")
-        for name, ids in groups.items():
-            print(f"  {name}: {', '.join(map(str, ids))}")
-        print("  1. Создать группу")
-        print("  2. Удалить группу")
-        print("  3. Назад")
-        choice = ask("Выберите")
-        if choice == "1":
-            name = ask("Название группы")
-            if not name:
-                continue
-            raw = ask("Номера участников через запятую (например 2,3,5)")
-            ids = sorted({int(x) for x in raw.replace(" ", "").split(",") if x.isdigit() and 1 <= int(x) <= 64})
-            if not ids:
-                print("  Нужен хотя бы один номер от 1 до 64.")
-                continue
-            groups[name] = ids
-            save_groups(groups)
-            print(f"  Группа «{name}» сохранена.")
-        elif choice == "2":
-            name = ask("Название группы для удаления")
-            if groups.pop(name, None) is not None:
-                save_groups(groups)
-                print("  Удалено.")
-            else:
-                print("  Такой группы нет.")
-        else:
-            return
+def discover():
+    print("\nИщем узлы в сети (около 8 секунд)...")
+    blip("discover", "--timeout", "8")
+    pause()
 
 
-def send():
-    peer = ask_number("Номер получателя (1-64)")
-    text = ask("Текст сообщения")
-    if not text:
-        print("  Пустое сообщение не отправляется.")
-        input("Enter...")
-        return
-    ip = ask("IP получателя (можно пусто — тогда ищем в сети)", "")
-    args = ["send", "--peer", peer, "--text", text]
-    if ip:
-        args += ["--peer-ip", ip]
-    run(*args)
+def inbox():
+    """Показывает последние входящие, затем слушает новые (Ctrl+C — назад)."""
+    if INBOX.exists():
+        lines = INBOX.read_text(encoding="utf-8").splitlines()[-20:]
+        print("\n--- Последние входящие ---")
+        for line in lines:
+            try:
+                e = json.loads(line)
+                print(f"#{e.get('from')}: {e.get('text')}")
+            except ValueError:
+                pass
+    print("\nСлушаем новые сообщения. Ctrl+C — назад.")
+    try:
+        blip("listen", "--output", str(INBOX))
+    except KeyboardInterrupt:
+        pass
 
 
-def listen():
-    print(f"\nСлушаем входящие. Новые сообщения пишутся в: {INBOX}")
-    print("Чтобы остановить, нажмите Ctrl+C.")
-    run("listen", "--output", str(INBOX))
+def settings():
+    print()
+    blip("identity")
+    if ask("Изменить номер и имя? (y — да, Enter — назад)").lower() == "y":
+        number = ask_number("Новый номер (1-64)")
+        name = ask("Новое имя", "Me")
+        blip("identity", "--id", number, "--name", name)
 
 
-def show_inbox():
-    if not INBOX.exists():
-        print("\nВходящих пока нет.")
-    else:
-        print(f"\n--- Входящие ({INBOX}) ---")
-        print(INBOX.read_text(encoding="utf-8"))
-    input("Enter, чтобы вернуться...")
+def setup_identity():
+    print("\n=== Первая настройка ===")
+    number = ask_number("Ваш номер (1-64)")
+    name = ask("Ваше имя", "Me")
+    blip("identity", "--id", number, "--name", name)
 
+
+# --- menu --------------------------------------------------------------------
 
 MENU = [
-    ("Отправить сообщение", send),
-    ("Показать, кто в сети", discover),
-    ("Живой чат с одним человеком", live_chat),
-    ("Написать группе", group_send),
-    ("Написать всем в сети", broadcast_all),
-    ("Управление группами", manage_groups),
-    ("Слушать входящие сообщения", listen),
-    ("Показать входящие", show_inbox),
-    ("Изменить номер и имя", change_identity),
-    ("Показать мои настройки", show_identity),
+    ("Чат с человеком", live_chat),
+    ("Написать группе или всем", write_to),
+    ("Кто в сети", discover),
+    ("Входящие", inbox),
+    ("Настройки", settings),
     ("Выход", None),
 ]
 
@@ -297,16 +246,15 @@ def main():
         setup_identity()
 
     while True:
-        print("\n========== BLIP CLI ==========")
+        print("\n=== BLIP CLI ===")
         for i, (title, _) in enumerate(MENU, 1):
             print(f"  {i}. {title}")
-        choice = input("Выберите действие (цифра): ").strip()
+        choice = input("Цифра: ").strip()
         if not choice.isdigit() or not (1 <= int(choice) <= len(MENU)):
             print("  Введите цифру из списка.")
             continue
         _, action = MENU[int(choice) - 1]
         if action is None:
-            print("До встречи!")
             return
         action()
 
