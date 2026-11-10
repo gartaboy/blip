@@ -27,3 +27,8 @@ python cli.py --identity a.json send --tcp-port 42072 --udp-port 42169 --peer 2 
 ## Security
 
 The identity file contains a private seed. Keep it out of version control (see `.gitignore`).
+
+## Author and origin
+
+- **Author:** [@gartaboy](https://github.com/gartaboy)
+- **Original project:** [krwg/blip](https://github.com/krwg/blip) — BLIP peer-to-peer LAN messenger (Electron + WebRTC), licensed under GPL-3.0. This CLI is a compatible command-line client for the same LAN mesh protocol.
