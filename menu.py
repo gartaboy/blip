@@ -11,13 +11,14 @@ CLI = HERE / "cli.py"
 INBOX = HERE / "inbox.jsonl"
 
 
-def run(*args):
-    """Запускает команду blip; Ctrl+C просто возвращает в меню."""
+def run(*args, pause=True):
+    """Запускает команду blip без служебных логов; Ctrl+C возвращает в меню."""
     try:
-        subprocess.run([sys.executable, str(CLI), *args], cwd=HERE)
+        subprocess.run([sys.executable, str(CLI), "-q", *args], cwd=HERE)
     except KeyboardInterrupt:
         print("\n(остановлено)")
-    input("\nНажмите Enter, чтобы вернуться в меню...")
+    if pause:
+        input("\nНажмите Enter, чтобы вернуться в меню...")
 
 
 def ask(prompt, default=None):
@@ -32,15 +33,26 @@ def identity_exists():
     return bool(path and path.exists())
 
 
+def ask_number(prompt, default=None):
+    while True:
+        value = ask(prompt, default)
+        if value.isdigit() and 1 <= int(value) <= 64:
+            return value
+        print("  Введите число от 1 до 64.")
+
+
 def setup_identity():
     print("\n=== Первая настройка ===")
-    print("Нужно выбрать свой номер (1-64) и имя, которое увидят другие.")
-    while True:
-        number = ask("Ваш номер (1-64)")
-        if number.isdigit() and 1 <= int(number) <= 64:
-            break
-        print("  Введите число от 1 до 64.")
+    print("Выберите свой номер (1-64) и имя, которое увидят другие.")
+    number = ask_number("Ваш номер (1-64)")
     name = ask("Ваше имя", "Me")
+    run("identity", "--id", number, "--name", name, pause=False)
+
+
+def change_identity():
+    print("\n=== Изменить номер и имя ===")
+    number = ask_number("Новый номер (1-64)")
+    name = ask("Новое имя", "Me")
     run("identity", "--id", number, "--name", name)
 
 
@@ -54,11 +66,7 @@ def discover():
 
 
 def send():
-    peer = ask("Номер получателя (1-64)")
-    if not (peer.isdigit() and 1 <= int(peer) <= 64):
-        print("  Номер должен быть от 1 до 64.")
-        input("Enter...")
-        return
+    peer = ask_number("Номер получателя (1-64)")
     text = ask("Текст сообщения")
     if not text:
         print("  Пустое сообщение не отправляется.")
@@ -91,7 +99,8 @@ MENU = [
     ("Показать, кто в сети", discover),
     ("Слушать входящие сообщения", listen),
     ("Показать входящие", show_inbox),
-    ("Мои настройки (номер и имя)", show_identity),
+    ("Изменить номер и имя", change_identity),
+    ("Показать мои настройки", show_identity),
     ("Выход", None),
 ]
 

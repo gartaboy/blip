@@ -10,3 +10,6 @@ __pycache__/
 .vscode/
 .idea/
 Thumbs.db
+
+# Local inbox written by the menu
+inbox.jsonl
