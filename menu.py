@@ -215,17 +215,18 @@ def inbox():
 def settings():
     print()
     blip("identity")
-    if ask("Изменить номер и имя? (y — да, Enter — назад)").lower() == "y":
-        number = ask_number("Новый номер (1-64)")
-        name = ask("Новое имя", "Me")
-        blip("identity", "--id", number, "--name", name)
+    if ask("Изменить номер? (y — да, Enter — назад)").lower() == "y":
+        set_number(ask_number("Новый номер (1-64)"))
+
+
+def set_number(number):
+    """Имя на сети всегда совпадает с номером — отдельного имени нет."""
+    blip("identity", "--id", number, "--name", number)
 
 
 def setup_identity():
     print("\n=== Первая настройка ===")
-    number = ask_number("Ваш номер (1-64)")
-    name = ask("Ваше имя", "Me")
-    blip("identity", "--id", number, "--name", name)
+    set_number(ask_number("Ваш номер (1-64)"))
 
 
 # --- menu --------------------------------------------------------------------
