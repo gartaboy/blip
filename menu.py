@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Простое меню для BLIP CLI: выбирайте цифры, ничего набирать вручную не нужно."""
 
+import json
 import os
 import subprocess
 import sys
@@ -9,6 +10,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 CLI = HERE / "cli.py"
 INBOX = HERE / "inbox.jsonl"
+GROUPS = HERE / "groups.json"
 
 BANNER = r"""
  ____  _     ___ ____    ____ _     ___
@@ -74,6 +76,117 @@ def discover():
     run("discover", "--timeout", "8")
 
 
+def load_groups():
+    if not GROUPS.exists():
+        return {}
+    try:
+        return json.loads(GROUPS.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+
+
+def save_groups(groups):
+    GROUPS.write_text(json.dumps(groups, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def find_peer_ids():
+    """Все номера, которые сейчас видны в сети (кроме себя)."""
+    try:
+        out = subprocess.run(
+            [sys.executable, str(CLI), "-q", "discover", "--timeout", "8", "--json"],
+            cwd=HERE, capture_output=True, text=True, encoding="utf-8",
+        ).stdout
+        data = json.loads(out)
+    except (ValueError, OSError):
+        return []
+    me = data.get("self", {}).get("blipId")
+    return [p["blipId"] for p in data.get("peers", []) if p.get("blipId") != me]
+
+
+def send_to_many(ids, text):
+    """Отправляет текст каждому номеру по очереди; ошибки одного не останавливают остальных."""
+    for peer in ids:
+        print(f"  -> #{peer}", end=" ", flush=True)
+        result = subprocess.run(
+            [sys.executable, str(CLI), "-q", "send", "--peer", str(peer), "--text", text],
+            cwd=HERE, capture_output=True, text=True, encoding="utf-8",
+        )
+        print("отправлено" if result.returncode == 0 else "не доставлено")
+
+
+def group_send():
+    groups = load_groups()
+    if not groups:
+        print("\nГрупп пока нет. Создайте группу в пункте «Управление группами».")
+        input("Enter...")
+        return
+    names = list(groups)
+    for i, name in enumerate(names, 1):
+        print(f"  {i}. {name} ({', '.join(map(str, groups[name]))})")
+    choice = ask("Номер группы")
+    if not (choice.isdigit() and 1 <= int(choice) <= len(names)):
+        print("  Нет такой группы.")
+        input("Enter...")
+        return
+    text = ask("Текст сообщения")
+    if not text:
+        print("  Пустое сообщение не отправляется.")
+        input("Enter...")
+        return
+    send_to_many(groups[names[int(choice) - 1]], text)
+    input("\nНажмите Enter, чтобы вернуться в меню...")
+
+
+def broadcast_all():
+    print("\nИщем всех в сети (около 8 секунд)...")
+    ids = find_peer_ids()
+    if not ids:
+        print("В сети никого не нашли.")
+        input("Enter...")
+        return
+    print(f"Найдено: {', '.join(f'#{i}' for i in ids)}")
+    text = ask("Текст для всех")
+    if not text:
+        print("  Пустое сообщение не отправляется.")
+        input("Enter...")
+        return
+    send_to_many(ids, text)
+    input("\nНажмите Enter, чтобы вернуться в меню...")
+
+
+def manage_groups():
+    while True:
+        groups = load_groups()
+        print("\n=== Группы ===")
+        for name, ids in groups.items():
+            print(f"  {name}: {', '.join(map(str, ids))}")
+        print("  1. Создать группу")
+        print("  2. Удалить группу")
+        print("  3. Назад")
+        choice = ask("Выберите")
+        if choice == "1":
+            name = ask("Название группы")
+            if not name:
+                continue
+            raw = ask("Номера участников через запятую (например 2,3,5)")
+            ids = sorted({int(x) for x in raw.replace(" ", "").split(",") if x.isdigit() and 1 <= int(x) <= 64})
+            if not ids:
+                print("  Нужен хотя бы один номер от 1 до 64.")
+                continue
+            groups[name] = ids
+            save_groups(groups)
+            print(f"  Группа «{name}» сохранена.")
+        elif choice == "2":
+            name = ask("Название группы для удаления")
+            if groups.pop(name, None) is not None:
+                save_groups(groups)
+                print("  Удалено.")
+            else:
+                print("  Такой группы нет.")
+        else:
+            return
+
+
 def send():
     peer = ask_number("Номер получателя (1-64)")
     text = ask("Текст сообщения")
@@ -106,6 +219,9 @@ def show_inbox():
 MENU = [
     ("Отправить сообщение", send),
     ("Показать, кто в сети", discover),
+    ("Написать группе", group_send),
+    ("Написать всем в сети", broadcast_all),
+    ("Управление группами", manage_groups),
     ("Слушать входящие сообщения", listen),
     ("Показать входящие", show_inbox),
     ("Изменить номер и имя", change_identity),
