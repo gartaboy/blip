@@ -1,5 +1,14 @@
 # BLIP CLI
 
+```
+ ____  _     ___ ____    ____ _     ___
+| __ )| |   |_ _|  _ \  / ___| |   |_ _|
+|  _ \| |    | || |_) || |   | |    | |
+| |_) | |___ | ||  __/ | |___| |___ | |
+|____/|_____|___|_|     \____|_____|___|
+        ~ tiny LAN messenger ~
+```
+
 Dependency-free CLI for the BLIP LAN mesh: discover peers, exchange messages, and run a JSONL inbox over UDP 42069 / TCP 42070. Requires Python 3.9+ (standard library only).
 
 ## Usage

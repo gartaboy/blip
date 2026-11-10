@@ -10,6 +10,15 @@ HERE = Path(__file__).resolve().parent
 CLI = HERE / "cli.py"
 INBOX = HERE / "inbox.jsonl"
 
+BANNER = r"""
+ ____  _     ___ ____    ____ _     ___
+| __ )| |   |_ _|  _ \  / ___| |   |_ _|
+|  _ \| |    | || |_) || |   | |    | |
+| |_) | |___ | ||  __/ | |___| |___ | |
+|____/|_____|___|_|     \____|_____|___|
+        ~ tiny LAN messenger ~
+"""
+
 
 def run(*args, pause=True):
     """Запускает команду blip без служебных логов; Ctrl+C возвращает в меню."""
@@ -106,6 +115,7 @@ MENU = [
 
 
 def main():
+    print(BANNER)
     if not identity_exists():
         setup_identity()
 
