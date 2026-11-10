@@ -114,6 +114,66 @@ def send_to_many(ids, text):
         print("отправлено" if result.returncode == 0 else "не доставлено")
 
 
+def live_chat():
+    """Живой чат: входящие появляются сразу, а строка ниже — для ответа.
+
+    Слушатель работает в фоновом потоке и печатает входящие в тот же экран.
+    Ответ уходит на номер, который вы указали в начале чата.
+    """
+    import threading
+
+    peer = ask_number("С каким номером общаемся (1-64)")
+    print(f"\n=== Чат с #{peer} ===")
+    print("Пишите сообщение и нажмите Enter. Чтобы выйти, напишите /выход.\n")
+
+    stop = threading.Event()
+
+    def reader():
+        proc = subprocess.Popen(
+            [sys.executable, str(CLI), "-q", "listen", "--output", str(INBOX), "--json"],
+            cwd=HERE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+            text=True, encoding="utf-8",
+        )
+        try:
+            for line in proc.stdout:
+                if stop.is_set():
+                    break
+                try:
+                    event = json.loads(line)
+                except ValueError:
+                    continue
+                if event.get("event") != "message":
+                    continue
+                sender = event.get("from")
+                if sender == int(peer):
+                    print(f"\r#{sender}: {event.get('text', '')}\n> ", end="", flush=True)
+                else:
+                    print(f"\r(#{sender}): {event.get('text', '')}\n> ", end="", flush=True)
+        finally:
+            proc.terminate()
+
+    listener = threading.Thread(target=reader, daemon=True)
+    listener.start()
+
+    try:
+        while True:
+            text = input("> ").strip()
+            if text == "/выход":
+                break
+            if not text:
+                continue
+            subprocess.run(
+                [sys.executable, str(CLI), "-q", "send", "--peer", peer, "--text", text],
+                cwd=HERE, capture_output=True, text=True, encoding="utf-8",
+            )
+    except (KeyboardInterrupt, EOFError):
+        pass
+    finally:
+        stop.set()
+    print("\nЧат закрыт.")
+    input("Enter, чтобы вернуться в меню...")
+
+
 def group_send():
     groups = load_groups()
     if not groups:
@@ -219,6 +279,7 @@ def show_inbox():
 MENU = [
     ("Отправить сообщение", send),
     ("Показать, кто в сети", discover),
+    ("Живой чат с одним человеком", live_chat),
     ("Написать группе", group_send),
     ("Написать всем в сети", broadcast_all),
     ("Управление группами", manage_groups),
