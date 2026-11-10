@@ -41,3 +41,7 @@ The identity file contains a private seed. Keep it out of version control (see `
 
 - **Author:** [@gartaboy](https://github.com/gartaboy)
 - **Original project:** [krwg/blip](https://github.com/krwg/blip) — BLIP peer-to-peer LAN messenger (Electron + WebRTC), licensed under GPL-3.0. This CLI is a compatible command-line client for the same LAN mesh protocol.
+
+## License
+
+GNU General Public License v3.0 — see [LICENSE](LICENSE).
