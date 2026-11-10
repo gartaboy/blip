@@ -1,4 +1,4 @@
-# blip
+# BLIP CLI
 
 Dependency-free CLI for the BLIP LAN mesh: discover peers, exchange messages, and run a JSONL inbox over UDP 42069 / TCP 42070. Requires Python 3.9+ (standard library only).
 

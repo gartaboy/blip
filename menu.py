@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Простое меню для BLIP: выбирайте цифры, ничего набирать вручную не нужно."""
+"""Простое меню для BLIP CLI: выбирайте цифры, ничего набирать вручную не нужно."""
 
 import os
 import subprocess
@@ -110,7 +110,7 @@ def main():
         setup_identity()
 
     while True:
-        print("\n========== BLIP ==========")
+        print("\n========== BLIP CLI ==========")
         for i, (title, _) in enumerate(MENU, 1):
             print(f"  {i}. {title}")
         choice = input("Выберите действие (цифра): ").strip()

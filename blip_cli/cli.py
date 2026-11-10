@@ -185,7 +185,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="blip",
         description=(
-            "Dependency-free BLIP LAN utility: discover peers, exchange messages, "
+            "Dependency-free BLIP CLI utility: discover peers, exchange messages, "
             "and run a JSONL inbox over UDP 42069 / TCP 42070."
         ),
         epilog=(
@@ -216,7 +216,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
 
     discover_parser = subparsers.add_parser(
-        "discover", help="announce and list BLIP peers on the LAN"
+        "discover", help="announce and list BLIP CLI peers on the LAN"
     )
     _add_common(discover_parser, suppress=True)
     discover_parser.add_argument(
